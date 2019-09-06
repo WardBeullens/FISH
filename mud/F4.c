@@ -55,8 +55,10 @@ void print_block(block * b){
 }
 
 void print_vect(vect * v){
-	for(int i=0; i<(N+63)/64*2; i++){
-		printf("%lu ", v->x[i] );
-	}
-	printf("\n");
+	printBits( sizeof(vect)/2 , v );
+	printBits( sizeof(vect)/2 , ((unsigned char *) v) + sizeof(vect)/2 );
+	//for(int i=0; i<(N+63)/64*2; i++){
+	//	printf("%lu ", v->x[i] );
+	//}
+	//printf("\n");
 }

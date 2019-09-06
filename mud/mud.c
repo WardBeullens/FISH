@@ -19,10 +19,10 @@ void evalF(const unsigned char* coefs, const block *in, block *out){
 			mulandadd(&in->x[2*i],&in->x[2*j],prod);
 
 			for(int k=0; k<N; k+=4){
-				add(prod, tmp+8*k+2*((coefs[cur_coef]   )& 3));
-				add(prod, tmp+8*k+2*((coefs[cur_coef]>>2)& 3));
-				add(prod, tmp+8*k+2*((coefs[cur_coef]>>4)& 3));
-				add(prod, tmp+8*k+2*((coefs[cur_coef]>>6)& 3));
+				add(prod, tmp + 8*(k+0) + 2*((coefs[cur_coef]   ) & 3));
+				add(prod, tmp + 8*(k+1) + 2*((coefs[cur_coef]>>2) & 3));
+				add(prod, tmp + 8*(k+2) + 2*((coefs[cur_coef]>>4) & 3));
+				add(prod, tmp + 8*(k+3) + 2*((coefs[cur_coef]>>6) & 3));
 				cur_coef ++;
 			}
 		}
@@ -45,10 +45,10 @@ void evalG(const unsigned char* coefs, const block *in1 , const block *in2 , blo
 			mulandadd(&in2->x[2*i],&in1->x[2*j],prod);
 
 			for(int k=0; k<N; k+=4){
-				add(prod, tmp+8*k+2*((coefs[cur_coef]   )& 3));
-				add(prod, tmp+8*k+2*((coefs[cur_coef]>>2)& 3));
-				add(prod, tmp+8*k+2*((coefs[cur_coef]>>4)& 3));
-				add(prod, tmp+8*k+2*((coefs[cur_coef]>>6)& 3));
+				add(prod, tmp + 8*(k+0) + 2*((coefs[cur_coef]   )& 3));
+				add(prod, tmp + 8*(k+1) + 2*((coefs[cur_coef]>>2)& 3));
+				add(prod, tmp + 8*(k+2) + 2*((coefs[cur_coef]>>4)& 3));
+				add(prod, tmp + 8*(k+3) + 2*((coefs[cur_coef]>>6)& 3));
 				cur_coef ++;
 			}
 		}
@@ -75,7 +75,7 @@ void generate_s(const unsigned char *seed, block *S){
 
 void keygen(unsigned char *pk, unsigned char *sk){
 	// pick random pk and sk
-	
+
 	RAND_bytes(PK_SEED(pk),SEED_BYTES);
 	RAND_bytes(SK_SEED(sk),SEED_BYTES);
 
@@ -193,7 +193,7 @@ void fill3blocks(vect *vectors, block *R0, block *E, block *T){
 			temp[j+256] = (vectors+3*j+2)->x[i*2];
 			temp[j+320] = (vectors+3*j+2)->x[i*2+1];
 		}
-		
+
 		transpose_64x64(temp);
 		transpose_64x64(temp+64);
 		transpose_64x64(temp+128);
@@ -233,7 +233,7 @@ void unpackblock(block *b, vect *vectors){
 		}
 	}
 
-	if(N%64 != 0){
+	#if N%64 != 0
 		for(int j=0; j<64; j++){
 			temp[j    ] = b->x[2*(j+64*i)];
 			temp[j+64 ] = b->x[2*(j+64*i)+1];
@@ -245,7 +245,7 @@ void unpackblock(block *b, vect *vectors){
 			(vectors+j)->x[2*i]   = temp[j]    & ((((uint64_t) 0) -1) << (64-(N%64))); 
 			(vectors+j)->x[2*i+1] = temp[j+64] & ((((uint64_t) 0) -1) << (64-(N%64))); 
 		}
-	}
+	#endif
 }
 
 void setup(const unsigned char *pk, const unsigned char *seeds, const unsigned char *indices, unsigned char *aux, unsigned char *helper){
@@ -366,6 +366,7 @@ void commit(const unsigned char *pk, const unsigned char *sk, const unsigned cha
 
 		block tmp = {0};
 		add_block( (block *) (HELPER_E(helper) + i*sizeof(block)) , x + i );
+
 		evalG(coefs, r1+i, (block *) (HELPER_T(helper) + i*sizeof(block)) , &tmp);
 		add_block(&tmp, x+i);
 	}
@@ -388,10 +389,12 @@ void commit(const unsigned char *pk, const unsigned char *sk, const unsigned cha
 	}
 }
 
-#if N>128
+#if N>=128
 	#define FV 4
+#elif N>=64
+	#define FV 2
 #else
-	#define FV 2 
+	#define FV 0 
 #endif
 
 void serialize_vects(const vect *vectors, unsigned char *out){
@@ -405,6 +408,9 @@ void serialize_vects(const vect *vectors, unsigned char *out){
 	int bits  = 0;
 	uint64_t buf = 0;
 	out += EXECUTIONS*3*FV*sizeof(uint64_t);
+
+	#if N%64 != 0
+
 	while(cur_in<EXECUTIONS*3*(FV+2)){		
 		buf |= ( V[cur_in] >> ((64-(N%64))-bits) );
 		bits += (N%64);
@@ -428,6 +434,8 @@ void serialize_vects(const vect *vectors, unsigned char *out){
 		out[cur_out] = 0;
 		out[cur_out] |= (unsigned char) buf;
 	}
+
+	#endif
 }
 
 void deserialize_vects(const unsigned char *in, vect *vectors){
@@ -496,13 +504,14 @@ void multiply_by_challenges(block *in, const uint16_t *challenges, block *out){
 		}
 		if(challenges[i] & 2){
 			out->x[2*i  ] ^= in->x[2*i+1] ;
-			out->x[2*i+1] ^= in->x[2*i] ^ in->x[2*i+1];
+			out->x[2*i+1] ^= (in->x[2*i] ^ in->x[2*i+1]);
 		}
 	}
 }
 
 void check(const unsigned char *pk, const unsigned char *indices, unsigned char *aux, unsigned char *commitments, const uint16_t *challenges, const unsigned char *responses){
 	// generate F from seed
+
 	unsigned char coefs[(N*N*(N+1)/2)/4];
 	EXPAND(PK_SEED(pk),SEED_BYTES,coefs,(N*N*(N+1)/2)/4);
 
@@ -520,22 +529,32 @@ void check(const unsigned char *pk, const unsigned char *indices, unsigned char 
 
 		fill3blocks(response_vects + 3*64*i, &r_1, &e_alpha, &t_alpha);
 
+		evalF(coefs,&r_1,&tmp);
+
 		add_block((block *) PK_V(pk),&tmp);
 
-		block Fr_1;
-		evalF(coefs,&r_1,&Fr_1);
-		add_block(&Fr_1,&tmp);
+		uint64_t challengevec[2] = {0};
+		for (int j = 0; j < 64 ; ++j)
+		{
+			if (challenges[j+i*64] & 1)
+				challengevec[0] |=  (((uint64_t) 1 ) << (63-j));
+			if (challenges[j+i*64] & 2)
+				challengevec[1] |=  (((uint64_t) 1 ) << (63-j));
+		}
 
-		multiply_by_challenges(&tmp,challenges,&x);
+		for (int j = 0; j < N; ++j)
+		{
+			mulandadd(tmp.x + 2*j, challengevec , x.x+2*j);
+		}
+
 		add_block(&e_alpha,&x);
 
 		evalG(coefs,&r_1,&t_alpha,&tmp);
 		add_block(&tmp,&x);
 
-		//print_block(&x);
-
 		unpackblock(&x,x_vect + i*64);
 	}
+
 
 	int executions_done = 0;
 	for(int i=0; i<SETUPS; i++){
@@ -557,7 +576,7 @@ void check(const unsigned char *pk, const unsigned char *indices, unsigned char 
 
 void test(){
 	unsigned char seed[SEED_BYTES] = {0};
-	RAND_bytes(seed,SEED_BYTES);
+	//RAND_bytes(seed,SEED_BYTES);
 
 	// generate F from seed
 	unsigned char coefs[(N*N*(N+1)/2)/4] = {0};

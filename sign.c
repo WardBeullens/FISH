@@ -43,12 +43,8 @@ void get_indices_and_challenges(const unsigned char *master_hash, unsigned char 
 		}
 	}
 
-	for(int i=SETUPS; i<(1<<SEED_DEPTH) ; i++){
-		indices[i] = 1;
-	}
-
 	for(int i=0; i<EXECUTIONS; i++){
-		challenges[i] =  0;//randomness[cur_r++] & ((1 << DEPTH)-1);
+		challenges[i] = randomness[cur_r++] & ((1 << DEPTH)-1);
 	}
 }
 
@@ -74,7 +70,7 @@ void sign(const unsigned char *sk, const unsigned char *pk, const unsigned char 
 	unsigned char aux_hash[HASH_BYTES];
 	HASH(aux,SETUPS*HASH_BYTES,aux_hash);
 
-	// generate commitments for instances in index set
+	// generate commitments for all instances
 	unsigned char commitments[HASH_BYTES*(1<<SEED_DEPTH)] = {0};
 	commit(pk,sk,seeds,helper,commitments);
 
@@ -82,8 +78,12 @@ void sign(const unsigned char *sk, const unsigned char *pk, const unsigned char 
 	unsigned char commitment_merkle_tree[((2<<SEED_DEPTH)-1)*HASH_BYTES];
 	build_tree(commitments,HASH_BYTES,SEED_DEPTH,commitment_merkle_tree);
 
-	//printf("aux_hash \n");
-	//print_hash(aux_hash);
+	/*printf("aux_hash \n");
+	print_hash(aux_hash);
+
+	printf("com_hash \n");
+	print_hash(commitment_merkle_tree);
+	printf("\n");*/
 
 	// generate master_hash
 	combine_hashes(m_hash,aux_hash,commitment_merkle_tree,SIG_HASH(sig));
@@ -144,8 +144,13 @@ int verify(const unsigned char *pk, const unsigned char *m, uint64_t mlen, const
 	unsigned char commitment_hash[HASH_BYTES];
 	hash_up(commitments,indices, SIG_SEEDS(sig)+ nodes_used*SEED_BYTES, nodes_used, commitment_hash);
 
-	//printf("aux_hash \n");
-	//print_hash(aux_hash);
+	/*printf("aux_hash \n");
+	print_hash(aux_hash);
+
+	printf("com_hash \n");
+	print_hash(commitment_hash);
+
+	printf("\n");*/
 
 	// combine hashes
 	unsigned char master_hash[HASH_BYTES];
