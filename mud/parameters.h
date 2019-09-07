@@ -44,7 +44,7 @@
 #define DEPTH 2
 #define SEED_DEPTH LOG(SETUPS)
 
-#define LEAF_BYTES (A_COLS*sizeof(uint16_t))
+#define LEAF_BYTES (2*sizeof(vect)+SEED_BYTES)
 #define LEAVES (1 << DEPTH)
 #define TREE_BYTES ((2*LEAVES-1)*HASH_BYTES)
 #define PATH_BYTES (DEPTH*HASH_BYTES)

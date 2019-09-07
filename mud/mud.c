@@ -329,6 +329,12 @@ void setup(const unsigned char *pk, const unsigned char *seeds, const unsigned c
 		if(indices[i] == 1){
 			continue;
 		}
+
+		// generate commitment randomness
+		unsigned char *commitment_randomness = HELPER_COMMITMENT_RANDOMNESS(helper) + i*2*SEED_BYTES;
+		EXPAND(seeds+i*SEED_BYTES,SEED_BYTES,commitment_randomness,2*SEED_BYTES);
+		//memset(commitment_randomness,0,2*SEED_BYTES);
+
 		vect *data = ((vect*) HELPER_DATA(helper)) +  8*i;
 
 		data[0] = data_e[0][i];
@@ -340,13 +346,21 @@ void setup(const unsigned char *pk, const unsigned char *seeds, const unsigned c
 		data[6] = data_e[3][i];
 		data[7] = data_t[3][i];
 
-		build_tree((unsigned char *) data, sizeof(vect[2]) , DEPTH, HELPER_TREES(helper) + i*TREE_BYTES);
+		unsigned char Data[LEAF_BYTES*LEAVES] = {0};
+
+		for (int i = 0; i < LEAVES; ++i)
+		{
+			memcpy(Data + i*LEAF_BYTES, commitment_randomness + (i%2)*SEED_BYTES, SEED_BYTES);
+			memcpy(Data + i*LEAF_BYTES + SEED_BYTES, data + 2*i, sizeof(vect[2]));
+		}
+
+		build_tree( Data, LEAF_BYTES , DEPTH, HELPER_TREES(helper) + i*TREE_BYTES);
 
 		memcpy(aux + i*HASH_BYTES, HELPER_TREES(helper) + i*TREE_BYTES, HASH_BYTES);
 	}
 }
 
-void commit(const unsigned char *pk, const unsigned char *sk, const unsigned char *seeds, const unsigned char *helper, unsigned char *commitments){
+void commit(const unsigned char *pk, const unsigned char *sk, const unsigned char *seeds, unsigned char *helper, unsigned char *commitments){
 	// generate s from seed
 	block S;
 	generate_s(SK_SEED(sk),&S);
@@ -379,13 +393,21 @@ void commit(const unsigned char *pk, const unsigned char *sk, const unsigned cha
 		unpackblock(x+i,data_x + 64*i);
 	}
 
+	// generate commitment randomness
+	RAND_bytes(HELPER_COMMITMENT_RANDOMNESS(helper) + SETUPS*2*SEED_BYTES, SETUPS*SEED_BYTES);
+
 	// make commitments
 	for(int i=0; i<SETUPS; i++){
-		vect data[2];
-		data[0] = data_r_1[i];
-		data[1] = data_x[i];
 
-		HASH((unsigned char *) data, sizeof(vect[2]) , commitments + i*HASH_BYTES );
+		unsigned char buf[sizeof(vect[2]) + SEED_BYTES];
+		memcpy(buf, HELPER_COMMITMENT_RANDOMNESS(helper) + (SETUPS*2+i)*SEED_BYTES, SEED_BYTES);
+		memcpy(buf+SEED_BYTES, &data_r_1[i], sizeof(vect));
+		memcpy(buf+SEED_BYTES+sizeof(vect), &data_x[i], sizeof(vect));
+		//vect data[2];
+		//data[0] = data_r_1[i];
+		//data[1] = data_x[i];
+
+		HASH(buf , sizeof(vect[2])+SEED_BYTES , commitments + i*HASH_BYTES );
 	}
 }
 
@@ -483,6 +505,10 @@ void respond(const unsigned char *pk, const unsigned char *sk, const unsigned ch
 			continue;
 		}
 
+		// copy commitment randomness to response
+		memcpy(RESPONSE_COMMITMENT_RANDOMNESS(responses) + executions_done*SEED_BYTES, HELPER_COMMITMENT_RANDOMNESS(helper) + i*2*SEED_BYTES + (challenges[executions_done]%2)*SEED_BYTES , SEED_BYTES );
+		memcpy(RESPONSE_COMMITMENT_RANDOMNESS(responses) + (EXECUTIONS+executions_done)*SEED_BYTES , HELPER_COMMITMENT_RANDOMNESS(helper) + (2*SETUPS+i)*SEED_BYTES , SEED_BYTES);
+
 		// copy vectors to response
 		memcpy(response_vects + executions_done*3   , (unsigned char *) (data_r_1 + i) , sizeof(vect));
 		memcpy(response_vects + executions_done*3+1 , (unsigned char *) (data + i*8+ challenges[executions_done]*2 ), sizeof(vect[2])); 
@@ -562,13 +588,22 @@ void check(const unsigned char *pk, const unsigned char *indices, unsigned char 
 			continue;
 		}
 
-		vect data[2];
-		data[0] = *(response_vects + executions_done*3);
-		data[1] = x_vect[executions_done];
+		unsigned char buf[SEED_BYTES + sizeof(vect[2])];
+		memcpy(buf,RESPONSE_COMMITMENT_RANDOMNESS(responses) + (EXECUTIONS+executions_done)*SEED_BYTES, SEED_BYTES);
+		memcpy(buf+SEED_BYTES, response_vects + executions_done*3 , sizeof(vect) );
+		memcpy(buf+SEED_BYTES+sizeof(vect), &x_vect[executions_done], sizeof(vect) );
 
-		HASH((unsigned char *) data, sizeof(vect[2]), commitments + i*HASH_BYTES);
+		//vect data[2];
+		//data[0] = *(response_vects + executions_done*3);
+		//data[1] = x_vect[executions_done];
 
-		follow_path((unsigned char *)(response_vects + (executions_done*3+1)), sizeof(vect[2]), DEPTH, RESPONSE_PATHS(responses) + executions_done*PATH_BYTES , challenges[executions_done] , aux + i*HASH_BYTES  );
+		HASH(buf, SEED_BYTES + sizeof(vect[2]), commitments + i*HASH_BYTES);
+
+		unsigned char Data[LEAF_BYTES] = {0};
+		memcpy(Data, RESPONSE_COMMITMENT_RANDOMNESS(responses) + executions_done*SEED_BYTES , SEED_BYTES);
+		memcpy(Data + SEED_BYTES, response_vects + (executions_done*3+1), sizeof(vect[2]) );
+
+		follow_path(Data, LEAF_BYTES, DEPTH, RESPONSE_PATHS(responses) + executions_done*PATH_BYTES , challenges[executions_done] , aux + i*HASH_BYTES  );
 
 		executions_done ++;
 	}
