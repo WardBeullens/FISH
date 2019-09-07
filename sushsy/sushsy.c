@@ -116,12 +116,12 @@ void get_last_col(uint16_t *v, uint16_t *A, unsigned char *permutation_seed, uin
 }
 
 void generate_r_and_sigma(const unsigned char *seed, uint16_t *r, unsigned char *sigma){
-	uint16_t A_randomness[A_COLS*3+50];
-	EXPAND(seed,SEED_BYTES,(unsigned char *) A_randomness,(A_COLS*3+50)*sizeof(uint16_t));
+	uint16_t A_randomness[A_COLS*3+50+SEED_BYTES];
+	EXPAND(seed,SEED_BYTES,(unsigned char *) A_randomness,(A_COLS*3+50+SEED_BYTES)*sizeof(uint16_t));
 
 	// generate r
 	int cur_A = 0;
-	int cur_rand = 0;
+	int cur_rand = SEED_BYTES; // The first 2*SEED_BYTES are used for commitment randomness!
 	while(cur_A < A_COLS){
 		if( ( A_randomness[cur_rand] & FIELD_MASK) < FIELD_PRIME ) {
 			r[cur_A++] = ( A_randomness[cur_rand] & FIELD_MASK);
@@ -165,22 +165,31 @@ void setup(const unsigned char *pk, const unsigned char *seeds, const unsigned c
 		}
 
 		uint16_t data[LEAVES*A_COLS];
-		unsigned char *Data = (unsigned char *) data;
+		unsigned char Data[LEAF_BYTES*LEAVES] = {0}; 
 
+		unsigned char *commitment_randomness = HELPER_COMMITMENT_RANDOMNESS(helper) + inst*HELPER_BYTES;
 		uint16_t *r = (uint16_t *) (HELPER_R(helper) + inst*HELPER_BYTES);
 		unsigned char *sigma = HELPER_SIGMA(helper) + inst*HELPER_BYTES;
 		uint16_t *v_sigma = (uint16_t *) (HELPER_V_SIGMA(helper) + inst*HELPER_BYTES);
 		unsigned char *tree = HELPER_TREE(helper) + inst*HELPER_BYTES;
 
+		// generate commitment randomness
+		EXPAND(seeds+inst*SEED_BYTES,SEED_BYTES,commitment_randomness,2*SEED_BYTES);
+
 		generate_r_and_sigma(seeds + inst*SEED_BYTES, data, sigma);
-		memcpy((unsigned char *)r, Data, A_COLS*sizeof(uint16_t));
+		memcpy((unsigned char *)r, (unsigned char *) data, A_COLS*sizeof(uint16_t));
 		permute_vector(v,sigma,v_sigma);
+
+		memcpy(Data, commitment_randomness, SEED_BYTES);
+		memcpy(Data + SEED_BYTES, data, A_COLS*sizeof(uint16_t));
 
 		int i,j;
 		for(i=1; i<LEAVES; i++){
 			for(j=0; j<A_COLS; j++){
 				data[i*A_COLS + j] = (data[(i-1)*A_COLS + j] + v_sigma[j]) % FIELD_PRIME;
 			}
+			memcpy(Data + i*LEAF_BYTES, commitment_randomness + (i%2)*SEED_BYTES, SEED_BYTES);
+			memcpy(Data + SEED_BYTES + i*LEAF_BYTES, data + i*A_COLS, A_COLS*sizeof(uint16_t));
 		}
 
 		build_tree(Data, LEAF_BYTES, DEPTH, tree);
@@ -213,7 +222,7 @@ void mat_mul(const uint16_t *A, uint16_t *last_col, uint16_t *vec, uint16_t *out
 	}
 }
 
-void commit(const unsigned char *pk, const unsigned char *sk, const unsigned char *seeds, const unsigned char *helper, unsigned char *commitments){
+void commit(const unsigned char *pk, const unsigned char *sk, const unsigned char *seeds, unsigned char *helper, unsigned char *commitments){
 	uint16_t v[A_COLS];
 	uint16_t A[(A_COLS-1)*A_ROWS];
 	gen_v_and_A(PK_SEED(pk),v,A);
@@ -231,19 +240,23 @@ void commit(const unsigned char *pk, const unsigned char *sk, const unsigned cha
 	int inst;
 	for (inst = 0; inst < SETUPS; inst++)
 	{
-		uint16_t buf[(A_COLS+1)/2 + A_ROWS] = {0};
+		uint16_t buf[(SEED_BYTES+A_COLS+1)/2 + A_ROWS] = {0};
+
+		// generate commitment randomness and copy to state
+		RAND_bytes((unsigned char *)buf,SEED_BYTES);
+		memcpy(HELPER_COMMITMENT_RANDOMNESS(helper) + inst*HELPER_BYTES + 2*SEED_BYTES, buf, SEED_BYTES);
 
 		// compute rho
-		compose_perm_ab_inv(pi,HELPER_SIGMA(helper) + inst*HELPER_BYTES, (unsigned char *) buf);
+		compose_perm_ab_inv(pi,HELPER_SIGMA(helper) + inst*HELPER_BYTES, (unsigned char *) (buf + SEED_BYTES/2));
 
 		// compute A*r_rho
 		uint16_t *r = (uint16_t *)(HELPER_R(helper) + inst*HELPER_BYTES);
 		uint16_t r_rho[A_COLS];
-		permute_vector(r,(unsigned char *) buf,r_rho);
+		permute_vector(r,(unsigned char *) (buf + SEED_BYTES/2),r_rho);
 
-		mat_mul(A,last_col,r_rho,buf + (A_COLS+1)/2);
+		mat_mul(A,last_col,r_rho,buf + (SEED_BYTES+A_COLS+1)/2);
 
-		HASH((unsigned char *) buf,((A_COLS+1)/2 + A_ROWS)*sizeof(uint16_t), commitments + inst*HASH_BYTES);
+		HASH((unsigned char *) buf,((SEED_BYTES+A_COLS+1)/2 + A_ROWS)*sizeof(uint16_t), commitments + inst*HASH_BYTES);
 	}
 }
 
@@ -346,6 +359,11 @@ void respond(const unsigned char *pk, const unsigned char *sk, const unsigned ch
 			continue;
 		}
 
+		// copy commitment randomness
+		const unsigned char *commitment_randomness = HELPER_COMMITMENT_RANDOMNESS(helper) + inst*HELPER_BYTES;
+		memcpy(RESPONSE_COMMITMENT_RANDOMNESS(responses) + executions_done*SEED_BYTES, commitment_randomness + (challenges[executions_done]%2)*SEED_BYTES , SEED_BYTES);
+		memcpy(RESPONSE_COMMITMENT_RANDOMNESS(responses) + EXECUTIONS*SEED_BYTES + executions_done*SEED_BYTES, commitment_randomness + 2*SEED_BYTES, SEED_BYTES);
+
 		// compute rho
 		compose_perm_ab_inv(pi,HELPER_SIGMA(helper) + inst*HELPER_BYTES, perms + executions_done*A_COLS);
 
@@ -389,17 +407,23 @@ void check(const unsigned char *pk, const unsigned char *indices, unsigned char 
 
 		const unsigned char *rho = perms + A_COLS*executions_done;
 
-		uint16_t buf[(A_COLS+1)/2 + A_ROWS]= {0};
-		memcpy((unsigned char *)buf,rho,A_COLS);
+		uint16_t buf[(SEED_BYTES+A_COLS+1)/2 + A_ROWS]= {0};
+		memcpy(buf, RESPONSE_COMMITMENT_RANDOMNESS(responses) + EXECUTIONS*SEED_BYTES + executions_done*SEED_BYTES , SEED_BYTES);
+		memcpy((unsigned char *) (buf + SEED_BYTES/2),rho,A_COLS);
 
 		uint16_t x_rho[A_COLS];
 		permute_vector(vectors + executions_done*A_COLS,rho,x_rho);
 
-		mat_mul(A,last_col,x_rho,buf + (A_COLS+1)/2);
+		mat_mul(A,last_col,x_rho,buf + (SEED_BYTES+A_COLS+1)/2);
 
-		HASH((unsigned char *)buf,(A_COLS+1)/2*2 + sizeof(uint16_t)*A_ROWS,commitments + inst*HASH_BYTES);
+		HASH((unsigned char *)buf,(SEED_BYTES+A_COLS+1)/2*2 + sizeof(uint16_t)*A_ROWS,commitments + inst*HASH_BYTES);
 
-		follow_path( (unsigned char *) (vectors + A_COLS*executions_done), LEAF_BYTES, DEPTH,RESPONSE_PATHS(responses) + executions_done*PATH_BYTES, challenges[executions_done], aux + HASH_BYTES*inst);
+		unsigned char leaf[LEAF_BYTES] = {0};
+
+		memcpy(leaf, RESPONSE_COMMITMENT_RANDOMNESS(responses) + executions_done*SEED_BYTES, SEED_BYTES);
+		memcpy(leaf + SEED_BYTES, (unsigned char *) (vectors + A_COLS*executions_done) , A_COLS*sizeof(uint16_t) );
+
+		follow_path( leaf , LEAF_BYTES, DEPTH,RESPONSE_PATHS(responses) + executions_done*PATH_BYTES, challenges[executions_done], aux + HASH_BYTES*inst);
 
 		executions_done ++;
 	}
