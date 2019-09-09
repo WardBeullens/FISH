@@ -2,7 +2,7 @@
 #include <stdint.h>
 #include "sign.h"
 
-#define TRIALS 500
+#define TRIALS 1000
 
 static inline
 uint64_t rdtsc(){

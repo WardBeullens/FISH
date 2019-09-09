@@ -4,30 +4,41 @@
 void generate_permutation(const unsigned char *seed, unsigned char *permutation){
 	int i=0;
 
-	unsigned char permutation_randomness[A_COLS*3+50];
-	EXPAND(seed,SEED_BYTES,permutation_randomness,A_COLS*3+50);
+	unsigned char extendedseed[SEED_BYTES+1];
+	memcpy(extendedseed, seed,SEED_BYTES);
 
-	for (i = 0; i < A_COLS; i++)
+	uint32_t list[A_COLS];
+	for (int ctr = 0; ctr < 256; ++ctr)
 	{
-		permutation[i] = i;
+		extendedseed[SEED_BYTES] = ctr;
+		EXPAND(extendedseed, SEED_BYTES+1, (unsigned char *) list,sizeof(uint32_t[A_COLS]));
+
+		int i;
+		for (i = 0; i < A_COLS; ++i)
+		{
+			list[i] &= 0xffffff00;
+			list[i] += i;
+		}
+
+		uint32_sort(list, A_COLS);
+
+		for (i = 1; i < A_COLS; ++i)
+		{
+			if( ( list[i] ^ list[i-1]) < 256 ){ // restart if there is a collision in the 24 higest bits of list
+				i = 0;
+				break;
+			}
+		}
+
+		if (i == A_COLS)
+		{
+			break;
+		}
 	}
 
-	int cur_rand = 0;
-	int cur_index = A_COLS-1;
-	int mask = 255;
-	while( cur_index > 0 )
+	for (int i = 0; i < A_COLS; ++i)
 	{
-		if(cur_index <= mask/2){
-			mask /= 2;
-		}
-	
-		if( (permutation_randomness[cur_rand] & mask) <= cur_index){
-			unsigned char tmp = permutation[cur_index];
-			permutation[cur_index] = permutation[permutation_randomness[cur_rand] & mask];
-			permutation[permutation_randomness[cur_rand] & mask] = tmp;
-			cur_index --;
-		}
-		cur_rand++;
+		permutation[i] = (unsigned char) (list[i] & 255); 
 	}
 }
 
@@ -36,6 +47,46 @@ void permute_vector(const uint16_t *vec, const unsigned char *permutation, uint1
 	for (i = 0; i < A_COLS; i++)
 	{
 		out[permutation[i]] = vec[i];
+	}
+}
+
+void permute_vector_ct(const uint16_t *vec, const unsigned char *permutation, uint16_t *out){
+	uint32_t list[A_COLS] = {0};
+	int i;
+	for (i = 0; i < A_COLS; ++i)
+	{
+		list[i] = (((uint32_t) permutation[i]) << 16) | (uint32_t) vec[i];
+	}
+
+	uint32_sort(list, A_COLS);
+
+	for (i = 0; i < A_COLS; ++i)
+	{
+		out[i] = (uint16_t) list[i];
+	}
+}
+
+void unpermute_vector_ct(const uint16_t *vec, const unsigned char *permutation, uint16_t *out){
+	uint32_t list1[A_COLS] = {0};
+	uint32_t list2[A_COLS] = {0};
+	int i;
+	for (i = 0; i < A_COLS; ++i)
+	{
+		list1[i] = (((uint32_t) permutation[i]) << 16) | (uint32_t) i;
+	}
+
+	uint32_sort(list1, A_COLS);
+
+	for (i = 0; i < A_COLS; ++i)
+	{
+		list2[i] = ( list1[i] << 16) | (uint32_t) vec[i];
+	}
+
+	uint32_sort(list2, A_COLS);
+
+	for (i = 0; i < A_COLS; ++i)
+	{
+		out[i] = (uint16_t) list2[i];
 	}
 }
 
@@ -178,7 +229,7 @@ void setup(const unsigned char *pk, const unsigned char *seeds, const unsigned c
 
 		generate_r_and_sigma(seeds + inst*SEED_BYTES, data, sigma);
 		memcpy((unsigned char *)r, (unsigned char *) data, A_COLS*sizeof(uint16_t));
-		permute_vector(v,sigma,v_sigma);
+		permute_vector_ct(v,sigma,v_sigma);
 
 		memcpy(Data, commitment_randomness, SEED_BYTES);
 		memcpy(Data + SEED_BYTES, data, A_COLS*sizeof(uint16_t));

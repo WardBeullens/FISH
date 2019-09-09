@@ -4,6 +4,7 @@
 #include <openssl/rand.h>
 #include "parameters.h"
 #include "../merkletree.h"
+#include "uint32_sort.h"
 
 #define SK_SEED(sk) (sk)
 #define SK_BYTES SEED_BYTES

@@ -103,6 +103,10 @@
 
 #endif
 
+#if A_COLS > 256
+	This implementation does not work for A_COLS > 256
+#endif
+
 #define HASHES 0
 #define FIELD_BITS LOG(FIELD_PRIME)
 #define SEED_DEPTH LOG(SETUPS)

@@ -1,6 +1,6 @@
 CC=gcc
-CFLAGS=-I XKCP/bin/Haswell/ 
-LFLAGS=-L XKCP/bin/Haswell/ -lkeccak -lcrypto
+CFLAGS=-I XKCP/bin/Haswell/ -I ../lib/include
+LFLAGS=-L XKCP/bin/Haswell/ -L ../lib/ -Wl,-rpath,"../lib" -lkeccak -lcrypto -ldjbsort
 
 IMPLEMENTATION_SOURCE = sign.c merkletree.c test.c
 IMPLEMENTATION_HEADERS= sign.h merkletree.h keccaklib
