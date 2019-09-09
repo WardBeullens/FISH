@@ -12,9 +12,9 @@
 
 #ifdef SL1
 
-#define N 84
-#define SETUPS 163
-#define EXECUTIONS 64
+#define N 88
+#define SETUPS 169
+#define EXECUTIONS 75
 #define SEED_BYTES 16
 #define HASH_BYTES 32
 
@@ -22,21 +22,21 @@
 
 #ifdef SL3
 
-#define N 116
+#define N 128
 #define SEED_BYTES 24
 #define HASH_BYTES 48
 #define SETUPS 256
-#define EXECUTIONS 101
+#define EXECUTIONS 111
 
 #endif
 
 #ifdef SL5
 
-#define N 152
+#define N 160
 #define SEED_BYTES 32
 #define HASH_BYTES 64
-#define SETUPS 384
-#define EXECUTIONS 128
+#define SETUPS 380
+#define EXECUTIONS 136
 
 #endif
 

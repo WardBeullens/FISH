@@ -1,6 +1,6 @@
 CC=gcc
-CFLAGS=-I XKCP/bin/generic64/ 
-LFLAGS=-L XKCP/bin/generic64/ -lkeccak -lcrypto
+CFLAGS=-I XKCP/bin/Haswell/ 
+LFLAGS=-L XKCP/bin/Haswell/ -lkeccak -lcrypto
 
 IMPLEMENTATION_SOURCE = sign.c merkletree.c test.c
 IMPLEMENTATION_HEADERS= sign.h merkletree.h keccaklib
@@ -18,7 +18,7 @@ mud: $(IMPLEMENTATION_SOURCE) $(IMPLEMENTATION_HEADERS) $(MUD_HEADERS) $(MUD_SOU
 	gcc -o benchmud $(IMPLEMENTATION_SOURCE) $(CFLAGS) $(LFLAGS) $(MUD_SOURCE) -std=c11 -O3 -g -march=native -DMUD
 
 keccaklib: 
-	(cd XKCP; make generic64/libkeccak.a)
+	(cd XKCP; make Haswell/libkeccak.a)
 
 .PHONY: clean
 clean:

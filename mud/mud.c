@@ -88,30 +88,6 @@ void keygen(unsigned char *pk, unsigned char *sk){
 	block *V = (block *) PK_V(pk);
 	generate_s(SK_SEED(sk),&S);
 	evalF(coefs,&S, V);
-
-	/* // put v in public key
-	PK_V(pk)[(2*N-1)/8] = 0;
-	for(int i=0; i<2*N; i++){
-		if(V.x[i]){
-			PK_V(pk)[i/8] |= (1<<i%8);
-		}
-	} */
-}
-
-void pack(unsigned char *vectors, block *packed, int index){
-	for(int i=0; i<N ; i+=4 ){
-		packed->x[i]   |= ((uint64_t ) ((vectors[i/4] &  1) >> 0)) << index;
-		packed->x[i+1] |= ((uint64_t ) ((vectors[i/4] &  2) >> 1)) << index;
-
-		packed->x[i+2] |= ((uint64_t ) ((vectors[i/4] &  4) >> 2)) << index;
-		packed->x[i+3] |= ((uint64_t ) ((vectors[i/4] &  8) >> 3)) << index;
-
-		packed->x[i+4] |= ((uint64_t ) ((vectors[i/4] & 16) >> 4)) << index;
-		packed->x[i+5] |= ((uint64_t ) ((vectors[i/4] & 32) >> 5)) << index;
-
-		packed->x[i+6] |= ((uint64_t ) ((vectors[i/4] & 64) >> 6)) << index;
-		packed->x[i+7] |= ((uint64_t ) ((vectors[i/4] &128) >> 7)) << index;
-	}
 }
 
 void print_mat(uint64_t *mat){
@@ -422,7 +398,7 @@ void commit(const unsigned char *pk, const unsigned char *sk, const unsigned cha
 void serialize_vects(const vect *vectors, unsigned char *out){
 	uint64_t * V = (uint64_t *) vectors;
 	for(int i=0 ; i<EXECUTIONS*3; i++){
-		memcpy(out + sizeof(uint64_t)*FV*i    , V+((FV+2)*i)  , FV*sizeof(uint64_t));
+		memcpy(out + sizeof(uint64_t)*FV*i , V+((FV+ ((N%64)? 2 : 0 ) )*i)  , FV*sizeof(uint64_t));
 	}
 
 	int cur_in = FV;
@@ -431,7 +407,7 @@ void serialize_vects(const vect *vectors, unsigned char *out){
 	uint64_t buf = 0;
 	out += EXECUTIONS*3*FV*sizeof(uint64_t);
 
-	#if N%64 != 0
+	#if (N%64 != 0)
 
 	while(cur_in<EXECUTIONS*3*(FV+2)){		
 		buf |= ( V[cur_in] >> ((64-(N%64))-bits) );
@@ -463,8 +439,10 @@ void serialize_vects(const vect *vectors, unsigned char *out){
 void deserialize_vects(const unsigned char *in, vect *vectors){
 	uint64_t * V = (uint64_t *) vectors;
 	for(int i=0 ; i<EXECUTIONS*3; i++){
-		memcpy(V+((FV+2)*i)  , in + sizeof(uint64_t)*FV*i    , FV*sizeof(uint64_t));
+		memcpy(V+((FV+((N%64)? 2 : 0 ))*i)  , in + sizeof(uint64_t)*FV*i    , FV*sizeof(uint64_t));
 	}
+
+	#if (N%64 != 0)
 
 	int cur_in = 0;
 	int cur_out = FV;
@@ -491,6 +469,8 @@ void deserialize_vects(const unsigned char *in, vect *vectors){
 		buf >>= (N%64);
 		cur_out += FV+2;
 	}
+	
+	#endif
 }
 
 void respond(const unsigned char *pk, const unsigned char *sk, const unsigned char *seeds, const unsigned char *indices, const uint16_t *challenges, const unsigned char *helper, unsigned char *responses){
@@ -544,7 +524,6 @@ void check(const unsigned char *pk, const unsigned char *indices, unsigned char 
 	vect response_vects[EXECUTIONS*3];
 	deserialize_vects(RESPONSE_VECTS(responses), response_vects);
 
-
 	vect x_vect[EXECUTION_BLOCKS*64];
 
 	for(int i=0; i< EXECUTION_BLOCKS; i++){
@@ -592,10 +571,6 @@ void check(const unsigned char *pk, const unsigned char *indices, unsigned char 
 		memcpy(buf,RESPONSE_COMMITMENT_RANDOMNESS(responses) + (EXECUTIONS+executions_done)*SEED_BYTES, SEED_BYTES);
 		memcpy(buf+SEED_BYTES, response_vects + executions_done*3 , sizeof(vect) );
 		memcpy(buf+SEED_BYTES+sizeof(vect), &x_vect[executions_done], sizeof(vect) );
-
-		//vect data[2];
-		//data[0] = *(response_vects + executions_done*3);
-		//data[1] = x_vect[executions_done];
 
 		HASH(buf, SEED_BYTES + sizeof(vect[2]), commitments + i*HASH_BYTES);
 
