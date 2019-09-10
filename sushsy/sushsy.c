@@ -66,27 +66,20 @@ void permute_vector_ct(const uint16_t *vec, const unsigned char *permutation, ui
 	}
 }
 
-void unpermute_vector_ct(const uint16_t *vec, const unsigned char *permutation, uint16_t *out){
-	uint32_t list1[A_COLS] = {0};
-	uint32_t list2[A_COLS] = {0};
+void compose_perm_ab_inv_ct(const unsigned char *a, const unsigned char *b, unsigned char *ab_inv){
+	uint32_t list[A_COLS] = {0};
+	
 	int i;
 	for (i = 0; i < A_COLS; ++i)
 	{
-		list1[i] = (((uint32_t) permutation[i]) << 16) | (uint32_t) i;
+		list[i] = (((uint32_t) b[i]) << 16) | ((uint32_t)  a[i]);
 	}
 
-	uint32_sort(list1, A_COLS);
+	uint32_sort(list, A_COLS);
 
 	for (i = 0; i < A_COLS; ++i)
 	{
-		list2[i] = ( list1[i] << 16) | (uint32_t) vec[i];
-	}
-
-	uint32_sort(list2, A_COLS);
-
-	for (i = 0; i < A_COLS; ++i)
-	{
-		out[i] = (uint16_t) list2[i];
+		ab_inv[i] = (unsigned char) list[i];
 	}
 }
 
@@ -249,13 +242,6 @@ void setup(const unsigned char *pk, const unsigned char *seeds, const unsigned c
 	}
 }
 
-void compose_perm_ab_inv(const unsigned char *a, const unsigned char *b, unsigned char *ab_inv){
-	int i;
-	for(i=0; i<A_COLS; i++){
-		ab_inv[b[i]] = a[i];
-	}
-}
-
 void mat_mul(const uint16_t *A, uint16_t *last_col, uint16_t *vec, uint16_t *out){
 	uint32_t tmp[A_ROWS]= {0};
 
@@ -298,12 +284,12 @@ void commit(const unsigned char *pk, const unsigned char *sk, const unsigned cha
 		memcpy(HELPER_COMMITMENT_RANDOMNESS(helper) + inst*HELPER_BYTES + 2*SEED_BYTES, buf, SEED_BYTES);
 
 		// compute rho
-		compose_perm_ab_inv(pi,HELPER_SIGMA(helper) + inst*HELPER_BYTES, (unsigned char *) (buf + SEED_BYTES/2));
+		compose_perm_ab_inv_ct(pi,HELPER_SIGMA(helper) + inst*HELPER_BYTES, (unsigned char *) (buf + SEED_BYTES/2));
 
 		// compute A*r_rho
 		uint16_t *r = (uint16_t *)(HELPER_R(helper) + inst*HELPER_BYTES);
 		uint16_t r_rho[A_COLS];
-		permute_vector(r,(unsigned char *) (buf + SEED_BYTES/2),r_rho);
+		permute_vector_ct(r,(unsigned char *) (buf + SEED_BYTES/2),r_rho);
 
 		mat_mul(A,last_col,r_rho,buf + (SEED_BYTES+A_COLS+1)/2);
 
@@ -416,7 +402,7 @@ void respond(const unsigned char *pk, const unsigned char *sk, const unsigned ch
 		memcpy(RESPONSE_COMMITMENT_RANDOMNESS(responses) + EXECUTIONS*SEED_BYTES + executions_done*SEED_BYTES, commitment_randomness + 2*SEED_BYTES, SEED_BYTES);
 
 		// compute rho
-		compose_perm_ab_inv(pi,HELPER_SIGMA(helper) + inst*HELPER_BYTES, perms + executions_done*A_COLS);
+		compose_perm_ab_inv_ct(pi,HELPER_SIGMA(helper) + inst*HELPER_BYTES, perms + executions_done*A_COLS);
 
 		uint16_t *r = (uint16_t *)(HELPER_R(helper) + inst*HELPER_BYTES);
 		uint16_t *v_sigma = (uint16_t *)(HELPER_V_SIGMA(helper) + inst*HELPER_BYTES);
